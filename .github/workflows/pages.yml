@@ -12,15 +12,14 @@ permissions:
 
 # Let a running deploy finish rather than cancelling it midway.
 concurrency:
-  group: pages
+  # New group: old runs are stuck at an environment gate and must not hold
+  # this corrected deployment in their queue.
+  group: pages-v2
   # A blocked Pages environment must never hold every later deploy hostage.
   cancel-in-progress: true
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
