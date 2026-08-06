@@ -13,7 +13,8 @@ permissions:
 # Let a running deploy finish rather than cancelling it midway.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  # A blocked Pages environment must never hold every later deploy hostage.
+  cancel-in-progress: true
 
 jobs:
   deploy:
