@@ -29,6 +29,7 @@ import { MAX_SNIPPET_BYTES, MAX_SNIPPET_LABEL, packSnippet } from "../shared/sni
 import {
   MAX_FILE_BYTES,
   MAX_FILE_LABEL,
+  frameAuthInput,
   fnv1a,
   packFile,
   packFrame,
@@ -38,6 +39,14 @@ import {
 import { statusLine } from "../shared/status-line";
 import { requestScreenWakeLock } from "../shared/wake-lock";
 import { wireShareDialog } from "../shared/share-dialog";
+import {
+  createFrameAuthenticator,
+  credentialMaterial,
+  decodeTotpSecret,
+  sealTransfer,
+  transferSalt,
+  type FrameAuthenticator,
+} from "../shared/secure-transfer";
 
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
@@ -78,6 +87,8 @@ const cfgFps = document.getElementById("cfg-fps") as HTMLSelectElement;
 const cfgBytes = document.getElementById("cfg-bytes") as HTMLSelectElement;
 const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
 const cfgSize = document.getElementById("cfg-size") as HTMLInputElement;
+const securityPassword = document.getElementById("security-password") as HTMLInputElement;
+const securityTotpSecret = document.getElementById("security-totp-secret") as HTMLInputElement;
 
 let selectedFile: {
   name: string;
@@ -85,6 +96,8 @@ let selectedFile: {
   payload: Uint8Array;
   compression: "none" | "gzip";
   transmittedSize: number;
+  authSalt: Uint8Array;
+  frameAuthenticator: FrameAuthenticator;
 } | null = null;
 let generation = 0; // bumped on every restart; stale loops see it and die
 let resizeDisplay: (() => void) | null = null;
@@ -212,12 +225,20 @@ async function startSelection(
   try {
     const { name, size, packed } = await prepare();
     if (selectionGeneration !== generation) return;
+    decodeTotpSecret(securityTotpSecret.value);
+    const credentials = credentialMaterial(securityPassword.value, securityTotpSecret.value);
+    const protectedPayload = await sealTransfer(packed.container, credentials);
+    const authSalt = transferSalt(protectedPayload);
+    const frameAuthenticator = await createFrameAuthenticator(credentials, authSalt);
+    if (selectionGeneration !== generation) return;
     selectedFile = {
       name,
       size,
-      payload: packed.container,
+      payload: protectedPayload,
       compression: packed.compression,
-      transmittedSize: packed.transmittedSize,
+      transmittedSize: protectedPayload.length,
+      authSalt,
+      frameAuthenticator,
     };
     await startStream(true);
   } catch (error) {
@@ -319,7 +340,7 @@ async function startStream(revealStage = false) {
     );
     return;
   }
-  const { name, size: fileSize, payload, compression, transmittedSize } = selectedFile;
+  const { name, size: fileSize, payload, compression, transmittedSize, authSalt, frameAuthenticator } = selectedFile;
   if (gen !== generation) return; // superseded while fetching
   const txFps = Number(cfgFps.value);
   const frameBytes = Number(cfgBytes.value);
@@ -352,6 +373,7 @@ async function startStream(revealStage = false) {
     blockLen,
     totalLen: payload.length,
     payloadFnv: fnv1a(payload),
+    authSalt,
   };
 
   let version: number | undefined; // locked after the first frame
@@ -397,9 +419,27 @@ async function startStream(revealStage = false) {
     canvas.style.height = `${(total * scale) / dpr}px`;
   };
 
-  const makeFrame = (): ImageData => {
-    const bytes = packFrame({ ...header, seq: nextSeq }, encoder.encode(nextSeq));
-    nextSeq++;
+  // Count displayed slots, not generation time: the three-frame lookahead is
+  // built early, but the user sees a decoy only after 3–7 seconds of frames.
+  const framesUntilNextDecoy = () => {
+    const random = crypto.getRandomValues(new Uint32Array(1))[0]! / 0x1_0000_0000;
+    return Math.ceil((3_000 + random * 4_000) / (1_000 / txFps));
+  };
+  let slotsUntilDecoy = framesUntilNextDecoy();
+  const makeFrame = async (): Promise<ImageData> => {
+    const isDecoy = --slotsUntilDecoy === 0;
+    if (isDecoy) slotsUntilDecoy = framesUntilNextDecoy();
+    let bytes: Uint8Array;
+    const frameHeader = { ...header, seq: nextSeq++ };
+    const block = isDecoy
+      ? crypto.getRandomValues(new Uint8Array(blockLen))
+      : encoder.encode(frameHeader.seq);
+    // Decoys use the identical public header and an equally sized keyed tag.
+    // Only a passphrase holder can tell which tag authenticates its block.
+    const authTag = isDecoy
+      ? crypto.getRandomValues(new Uint8Array(8))
+      : await frameAuthenticator.tag(frameAuthInput(frameHeader, block));
+    bytes = packFrame(frameHeader, block, authTag);
     const qr = QRCode.create([{ data: bytes, mode: "byte" } as unknown as QRCode.QRCodeSegment], {
       errorCorrectionLevel: ecc,
       version,
@@ -420,7 +460,9 @@ async function startStream(revealStage = false) {
       spec("spec-qr").textContent = `V${version} · ECC ${ecc}`;
       spec("spec-payload").textContent = `${name} · ${formatBytes(fileSize)}`;
       spec("spec-compression").textContent =
-        compression === "gzip" ? `gzip → ${formatBytes(transmittedSize)}` : "none";
+        compression === "gzip"
+          ? `gzip → ${formatBytes(transmittedSize)} · AES-GCM`
+          : `AES-GCM · ${formatBytes(transmittedSize)}`;
       spec("spec-k").textContent = `K = ${encoder.k}`;
       showStreamPanels(true);
       // The tail of the status line is the door to the share dialog. Built by
@@ -448,17 +490,21 @@ async function startStream(revealStage = false) {
    * never pays for more than the single frame it just consumed.
    */
   let generatorFailed = false;
-  const pump = (max = LOOKAHEAD) => {
-    if (generatorFailed || gen !== generation) return;
+  let generating = false;
+  const pump = async (max = LOOKAHEAD) => {
+    if (generatorFailed || gen !== generation || generating) return;
+    generating = true;
     try {
-      for (let n = 0; n < max && queue.length < LOOKAHEAD; n++) queue.push(makeFrame());
+      for (let n = 0; n < max && queue.length < LOOKAHEAD; n++) queue.push(await makeFrame());
     } catch (err) {
       // e.g. frame bytes over capacity for the chosen ECC level
       generatorFailed = true;
       showError(err instanceof Error ? err.message : String(err));
+    } finally {
+      generating = false;
     }
   };
-  pump();
+  void pump();
 
   const interval = 1000 / txFps;
   let nextAt = performance.now();
@@ -469,7 +515,7 @@ async function startStream(revealStage = false) {
     requestAnimationFrame(tick);
     if (now < nextAt) return;
     const img = queue.shift();
-    pump(1);
+    void pump(1);
     if (!img) {
       nextAt = now + interval;
       return;

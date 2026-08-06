@@ -17,14 +17,14 @@ const OFFERED = FRAME_BYTES_OPTIONS;
 
 test("the header takes its cut off every frame", () => {
   assert.equal(blockLength(2953), 2953 - HEADER_LEN);
-  assert.equal(blockLength(500), 480);
+  assert.equal(blockLength(500), 500 - HEADER_LEN);
 });
 
 test("block count rounds up, because a partial block still needs a frame", () => {
   assert.equal(sourceBlockCount(1, 2953), 1);
-  assert.equal(sourceBlockCount(2933, 2953), 1);
-  assert.equal(sourceBlockCount(2934, 2953), 2);
-  assert.equal(sourceBlockCount(10 * 2933, 2953), 10);
+  assert.equal(sourceBlockCount(2953 - HEADER_LEN, 2953), 1);
+  assert.equal(sourceBlockCount(2954 - HEADER_LEN, 2953), 2);
+  assert.equal(sourceBlockCount(10 * (2953 - HEADER_LEN), 2953), 10);
 });
 
 test("the block ceiling bites well below the file size limit", () => {

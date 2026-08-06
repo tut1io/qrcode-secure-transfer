@@ -23,6 +23,7 @@ import { DecodeWorkerPool } from "../shared/worker-pool";
 import { isSnippet, snippetText } from "../shared/snippet";
 import {
   fnv1a,
+  frameAuthInput,
   parseFrame,
   streamIdentity,
   unpackFile,
@@ -34,6 +35,13 @@ import { statusLine } from "../shared/status-line";
 import { requestScreenWakeLock } from "../shared/wake-lock";
 import { applyAdvancedConstraint, probeCameraCapabilities } from "../shared/platform";
 import { closeOnBackdropClick } from "../shared/dialog";
+import {
+  createFrameAuthenticator,
+  credentialMaterial,
+  openTransfer,
+  verifyTotp,
+  type FrameAuthenticator,
+} from "../shared/secure-transfer";
 
 const startBtn = document.getElementById("start") as HTMLButtonElement;
 const video = document.getElementById("video") as HTMLVideoElement;
@@ -55,6 +63,9 @@ const cameraActual = document.getElementById("camera-actual")!;
 const noSignalToast = document.getElementById("no-signal")!;
 const noSignalDialog = document.getElementById("no-signal-dialog") as HTMLDialogElement;
 const noSignalTips = document.getElementById("no-signal-tips")!;
+const securityPassword = document.getElementById("security-password") as HTMLInputElement;
+const securityTotpSecret = document.getElementById("security-totp-secret") as HTMLInputElement;
+const securityTotpCode = document.getElementById("security-totp-code") as HTMLInputElement;
 const metric = (id: string) => document.getElementById(id)!;
 
 // Nothing has decoded in this long → the sender is almost certainly too dense
@@ -77,6 +88,9 @@ let captureGen = 0;
 let done = false;
 let settingsWired = false;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
+let transferPassphrase = "";
+let frameAuthenticator: FrameAuthenticator | null = null;
+let frameAuthenticatorSalt = "";
 
 const noSignal = new NoSignalHintTimer(NO_SIGNAL_FIRST_MS, NO_SIGNAL_DISMISSED_MS);
 const pool = new DecodeWorkerPool(createDecodeWorker, (bytes) => onDecoded(bytes));
@@ -147,6 +161,22 @@ function offerRetry(message: string) {
 }
 
 async function start() {
+  // This is deliberately local: it validates an RFC 6238 code against the
+  // enrolled secret in memory and makes no request to Google or any server.
+  try {
+    if (!(await verifyTotp(securityTotpSecret.value, securityTotpCode.value))) {
+      showError("The authenticator code is invalid or has expired.");
+      return;
+    }
+    if (securityPassword.value.length < 12) {
+      showError("Enter the shared passphrase (at least 12 characters).");
+      return;
+    }
+    transferPassphrase = credentialMaterial(securityPassword.value, securityTotpSecret.value);
+  } catch (error) {
+    showError(error instanceof Error ? error.message : String(error));
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) {
     // On insecure origins the API doesn't exist AT ALL — this is the plain-
     // http-over-LAN case. localhost is exempt; other hosts need https.
@@ -190,6 +220,7 @@ async function start() {
   }
 
   startBtn.style.display = "none";
+  for (const field of [securityPassword, securityTotpSecret, securityTotpCode]) field.disabled = true;
   // "": back to the stylesheet's flex — the zone centers the camera box.
   preview.style.display = "";
   metricsEl.style.display = "grid";
@@ -305,11 +336,17 @@ function captureFrame() {
   pool.submit({ id: frameId++, buf: img.data.buffer, w: vw, h: vh }, [img.data.buffer]);
 }
 
-function onDecoded(bytes: Uint8Array) {
+async function onDecoded(bytes: Uint8Array) {
   decodeTimes.push(performance.now());
   const parsed = parseFrame(bytes);
   if (!parsed || done) return;
   const { header, block } = parsed;
+  const saltKey = [...(header.authSalt ?? [])].join(",");
+  if (!frameAuthenticator || frameAuthenticatorSalt !== saltKey) {
+    frameAuthenticator = await createFrameAuthenticator(transferPassphrase, header.authSalt!);
+    frameAuthenticatorSalt = saltKey;
+  }
+  if (!(await frameAuthenticator.verify(frameAuthInput(header, block), bytes.subarray(20, 28)))) return;
   if (noSignal.frameDecoded()) {
     noSignalToast.hidden = true;
     // The dialog's premise ("nothing decoded") just became false mid-read.
@@ -397,7 +434,7 @@ async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   etaLabel.textContent = `${formatDuration(seconds)} total`;
   try {
     if (!hashOk) throw new Error("The optical stream checksum did not match.");
-    const file = await unpackFile(container);
+    const file = await unpackFile(await openTransfer(container, transferPassphrase));
     if (!(await verifyFile(file))) throw new Error("The recovered file failed SHA-256 verification.");
 
     // The container carries its own media type, so the receiver never has to be

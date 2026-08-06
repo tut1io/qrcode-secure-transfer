@@ -807,6 +807,22 @@ details.settings input[type="range"] {
   width: 100%;
 }
 
+.security-panel {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-radius: 10px;
+}
+
+.security-panel .eyebrow { margin: 0; }
+.security-panel p { margin: 0; font-size: 14px; line-height: 1.45; }
+.security-panel label { display: grid; gap: 5px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.security-panel input { min-width: 0; padding: 10px 12px; color: var(--text); background: var(--panel-strong); border: 1px solid var(--line-bright); border-radius: 6px; font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: none; }
+
 .demo-picker {
   width: 100%;
   display: flex;

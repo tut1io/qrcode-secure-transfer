@@ -34,6 +34,13 @@
         </label>
       </div>
 
+      <section class="security-panel" aria-labelledby="security-title">
+        <p class="eyebrow" id="security-title">Protected transfer</p>
+        <p>Encrypt this transfer with a shared passphrase. The recipient must also enter a current code from the enrolled Google Authenticator secret.</p>
+        <label>Shared passphrase <input id="security-password" type="password" minlength="12" autocomplete="new-password" /></label>
+        <label>Authenticator secret (Base32) <input id="security-totp-secret" type="password" autocomplete="off" spellcheck="false" /></label>
+      </section>
+
       <!-- The whole label is the click target; the native input is visually
            hidden (but still focusable) and the styled span stands in for it. -->
       <label class="file-picker" id="pane-file">

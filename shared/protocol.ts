@@ -12,7 +12,9 @@
 //  12  u32  totalLen    protected file-container length in bytes
 //  16  u32  payloadFnv  FNV-1a of the whole container — verified on completion
 
-export const HEADER_LEN = 20;
+export const FRAME_AUTH_TAG_LEN = 8;
+export const FRAME_AUTH_SALT_LEN = 16;
+export const HEADER_LEN = 20 + FRAME_AUTH_TAG_LEN + FRAME_AUTH_SALT_LEN;
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 /**
  * One place for the number, so the picker label, the rejection message and
@@ -276,9 +278,11 @@ export interface FrameHeader {
   blockLen: number;
   totalLen: number;
   payloadFnv: number;
+  /** Public KDF salt; knowing it does not reveal the passphrase-derived key. */
+  authSalt?: Uint8Array;
 }
 
-export function packFrame(h: FrameHeader, block: Uint8Array): Uint8Array {
+export function packFrame(h: FrameHeader, block: Uint8Array, authTag?: Uint8Array): Uint8Array {
   const out = new Uint8Array(HEADER_LEN + block.length);
   const dv = new DataView(out.buffer);
   dv.setUint8(0, MAGIC0);
@@ -289,6 +293,13 @@ export function packFrame(h: FrameHeader, block: Uint8Array): Uint8Array {
   dv.setUint16(10, h.blockLen, true);
   dv.setUint32(12, h.totalLen, true);
   dv.setUint32(16, h.payloadFnv, true);
+  const tag = authTag ?? new Uint8Array(FRAME_AUTH_TAG_LEN);
+  const salt = h.authSalt ?? new Uint8Array(FRAME_AUTH_SALT_LEN);
+  if (tag.length !== FRAME_AUTH_TAG_LEN || salt.length !== FRAME_AUTH_SALT_LEN) {
+    throw new Error("Invalid protected-frame authentication fields.");
+  }
+  out.set(tag, 20);
+  out.set(salt, 20 + FRAME_AUTH_TAG_LEN);
   out.set(block, HEADER_LEN);
   return out;
 }
@@ -306,6 +317,7 @@ export function parseFrame(
     blockLen: dv.getUint16(10, true),
     totalLen: dv.getUint32(12, true),
     payloadFnv: dv.getUint32(16, true),
+    authSalt: bytes.slice(20 + FRAME_AUTH_TAG_LEN, HEADER_LEN),
   };
   if (header.k === 0 || header.blockLen === 0 || header.totalLen === 0) return null;
   if (bytes.length !== HEADER_LEN + header.blockLen) return null;
@@ -326,7 +338,24 @@ export function parseFrame(
  * k, sessionId and seq produce an identical frame.
  */
 export function streamIdentity(h: FrameHeader): string {
-  return `${h.sessionId}:${h.k}:${h.blockLen}:${h.totalLen}:${h.payloadFnv}`;
+  return `${h.sessionId}:${h.k}:${h.blockLen}:${h.totalLen}:${h.payloadFnv}:` +
+    [...(h.authSalt ?? [])].join(",");
+}
+
+/** Canonical bytes covered by the keyed frame tag (the tag and salt are excluded). */
+export function frameAuthInput(h: FrameHeader, block: Uint8Array): Uint8Array {
+  const out = new Uint8Array(20 + block.length);
+  const view = new DataView(out.buffer);
+  view.setUint8(0, MAGIC0);
+  view.setUint8(1, MAGIC1);
+  view.setUint16(2, h.sessionId, true);
+  view.setUint32(4, h.seq, true);
+  view.setUint16(8, h.k, true);
+  view.setUint16(10, h.blockLen, true);
+  view.setUint32(12, h.totalLen, true);
+  view.setUint32(16, h.payloadFnv, true);
+  out.set(block, 20);
+  return out;
 }
 
 export function fnv1a(bytes: Uint8Array): number {

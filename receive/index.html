@@ -26,6 +26,13 @@
           </div>
           <div class="hint status-line" id="stats">Ready to scan a file or text stream</div>
         </div>
+        <section class="security-panel" aria-labelledby="receive-security-title">
+          <p class="eyebrow" id="receive-security-title">Offline MFA</p>
+          <p>Nothing is sent to Google. Enter the shared passphrase and a current code from the Google Authenticator seed enrolled for this transfer.</p>
+          <label>Shared passphrase <input id="security-password" type="password" minlength="12" autocomplete="current-password" /></label>
+          <label>Authenticator secret (Base32) <input id="security-totp-secret" type="password" autocomplete="off" spellcheck="false" /></label>
+          <label>6-digit authenticator code <input id="security-totp-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" /></label>
+        </section>
         <button id="start">Start camera</button>
         <!-- The zone exists so the toast can hang just above the camera box:
              .preview clips its children (overflow: hidden), this doesn't. -->

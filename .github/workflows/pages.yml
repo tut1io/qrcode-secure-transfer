@@ -29,6 +29,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Kept explicit so the sender's Share receiver link points at this
+          # deployment rather than the upstream project's public site.
+          VITE_SITE_URL: https://tut1io.github.io/qrcode-secure-transfer/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

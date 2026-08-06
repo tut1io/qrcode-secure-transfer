@@ -80,9 +80,7 @@ test("filenames that sanitise away fall back to a safe default", async () => {
   }
 });
 
-test("the frame header is byte-for-byte what the wire expects", () => {
-  // 20-byte little-endian header, then the block. Both ends parse this without
-  // negotiating, and standalone builds from older releases stay in circulation.
+test("the protected frame header is byte-for-byte what the wire expects", () => {
   const frame = packFrame(
     {
       sessionId: 0xbeef,
@@ -91,12 +89,14 @@ test("the frame header is byte-for-byte what the wire expects", () => {
       blockLen: 6,
       totalLen: 0x00fedcba,
       payloadFnv: 0x89abcdef,
+      authSalt: new Uint8Array(16).fill(0xaa),
     },
     new Uint8Array([1, 2, 3, 4, 5, 6]),
+    new Uint8Array(8).fill(0xbb),
   );
   assert.equal(
     [...frame].map((b) => b.toString(16).padStart(2, "0")).join(" "),
-    "d1 0c ef be 04 03 02 01 11 01 06 00 ba dc fe 00 ef cd ab 89 01 02 03 04 05 06",
+    "d1 0c ef be 04 03 02 01 11 01 06 00 ba dc fe 00 ef cd ab 89 bb bb bb bb bb bb bb bb aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 01 02 03 04 05 06",
   );
   assert.equal(frame.length, HEADER_LEN + 6);
 
@@ -109,6 +109,7 @@ test("the frame header is byte-for-byte what the wire expects", () => {
     blockLen: 6,
     totalLen: 0x00fedcba,
     payloadFnv: 0x89abcdef,
+    authSalt: new Uint8Array(16).fill(0xaa),
   });
   assert.deepEqual(parsed.block, new Uint8Array([1, 2, 3, 4, 5, 6]));
 });
