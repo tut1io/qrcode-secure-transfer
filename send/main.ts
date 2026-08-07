@@ -47,6 +47,12 @@ import {
   transferSalt,
   type FrameAuthenticator,
 } from "../shared/secure-transfer";
+import {
+  accessPassState,
+  createDemoAccessPass,
+  formatAccessRemaining,
+  reserveAccessPass,
+} from "../shared/access-pass";
 
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
@@ -89,6 +95,14 @@ const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
 const cfgSize = document.getElementById("cfg-size") as HTMLInputElement;
 const securityPassword = document.getElementById("security-password") as HTMLInputElement;
 const securityTotpSecret = document.getElementById("security-totp-secret") as HTMLInputElement;
+const accessPurchase = document.getElementById("access-purchase") as HTMLButtonElement;
+const accessStatus = document.getElementById("access-status")!;
+const accessToken = document.getElementById("access-token")!;
+const generateMfa = document.getElementById("generate-mfa") as HTMLButtonElement;
+const copyMfa = document.getElementById("copy-mfa") as HTMLButtonElement;
+const showMfa = document.getElementById("show-mfa") as HTMLButtonElement;
+const mfaProvision = document.getElementById("mfa-provision")!;
+const mfaQr = document.getElementById("mfa-qr") as HTMLCanvasElement;
 
 let selectedFile: {
   name: string;
@@ -104,6 +118,53 @@ let resizeDisplay: (() => void) | null = null;
 
 const specsLine = statusLine(specs);
 const setStatus = specsLine.setStatus;
+
+function setBrand(): void {
+  document.querySelector(".brand")?.replaceChildren("securedrop");
+  document.querySelector(".footer-id > span")!.textContent = "securedrop";
+}
+
+/** The stream caches its encryption keys when it starts. Letting the visible
+ * inputs change afterwards made the page claim a different seed than the QR
+ * stream actually used. Keep them copyable, but immutable, until stopped. */
+function lockTransferCredentials(locked: boolean): void {
+  securityPassword.disabled = locked;
+  securityTotpSecret.disabled = locked;
+  generateMfa.disabled = locked;
+}
+
+function refreshAccessPass(): void {
+  const state = accessPassState();
+  const remaining = formatAccessRemaining();
+  accessPurchase.disabled = state === "ready";
+  if (state === "ready") {
+    accessStatus.textContent = `Access pass active · ${remaining} remaining`;
+    accessToken.hidden = false;
+  } else if (state === "expired") {
+    accessStatus.textContent = "Access pass expired · active transfers can finish, but no new transfer can begin";
+    accessToken.hidden = true;
+  } else {
+    accessStatus.textContent = "No access pass · purchase is required to start a transfer";
+    accessToken.hidden = true;
+  }
+}
+
+function base32(bytes: Uint8Array): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let buffer = 0;
+  let bits = 0;
+  let output = "";
+  for (const byte of bytes) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      output += alphabet[(buffer >>> bits) & 31]!;
+    }
+  }
+  if (bits > 0) output += alphabet[(buffer << (5 - bits)) & 31]!;
+  return output;
+}
 
 /**
  * Errors also hide the stage — a stale QR stream pulsing away under a
@@ -142,6 +203,7 @@ function updateFilePicker(): void {
 function stopTransfer(): void {
   generation++;
   selectedFile = null;
+  lockTransferCredentials(false);
   setStageFullscreen(false);
   stage.hidden = true;
   showStreamPanels(false);
@@ -180,6 +242,7 @@ window.addEventListener("keydown", (event) => {
 function applyMode(): void {
   generation++;
   selectedFile = null;
+  lockTransferCredentials(false);
   setStageFullscreen(false);
   stage.hidden = true;
   showStreamPanels(false);
@@ -231,6 +294,10 @@ async function startSelection(
     const authSalt = transferSalt(protectedPayload);
     const frameAuthenticator = await createFrameAuthenticator(credentials, authSalt);
     if (selectionGeneration !== generation) return;
+    // The pass is consumed only after the locally-held credentials have been
+    // validated and the encrypted payload is ready. A typo must not spend it.
+    reserveAccessPass();
+    refreshAccessPass();
     selectedFile = {
       name,
       size,
@@ -240,6 +307,7 @@ async function startSelection(
       authSalt,
       frameAuthenticator,
     };
+    lockTransferCredentials(true);
     await startStream(true);
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));
@@ -284,6 +352,34 @@ async function selectSnippet(): Promise<void> {
 }
 
 async function main() {
+  setBrand();
+  refreshAccessPass();
+  accessPurchase.addEventListener("click", () => {
+    const pass = createDemoAccessPass();
+    accessToken.textContent = `Demo token: ${pass.token}`;
+    refreshAccessPass();
+  });
+  generateMfa.addEventListener("click", () => {
+    const secret = base32(crypto.getRandomValues(new Uint8Array(20)));
+    securityTotpSecret.value = secret;
+    const uri = `otpauth://totp/${encodeURIComponent("securedrop:private transfer")}?secret=${secret}&issuer=${encodeURIComponent("securedrop")}&algorithm=SHA1&digits=6&period=30`;
+    void QRCode.toCanvas(mfaQr, uri, { errorCorrectionLevel: "M", margin: 2, width: 190 });
+    mfaProvision.hidden = false;
+    copyMfa.hidden = false;
+    showMfa.hidden = false;
+    setStatus("MFA secret generated locally. Scan the QR with Google Authenticator, then securely copy the same secret to the receiver.");
+  });
+  copyMfa.addEventListener("click", async () => {
+    if (!securityTotpSecret.value) return;
+    await navigator.clipboard.writeText(securityTotpSecret.value);
+    setStatus("Authenticator secret copied. Paste it into the receiver's Base32 field over a secure channel.");
+  });
+  showMfa.addEventListener("click", () => {
+    const visible = securityTotpSecret.type === "text";
+    securityTotpSecret.type = visible ? "password" : "text";
+    showMfa.textContent = visible ? "Show MFA secret briefly" : "Hide MFA secret";
+  });
+  window.setInterval(refreshAccessPass, 1_000);
   // Both bounds come from MAX_SNIPPET_BYTES so they can't drift apart. maxLength
   // counts UTF-16 units and the real check counts UTF-8 bytes, which are never
   // fewer — so this is a loose guard and packSnippet() remains authoritative.

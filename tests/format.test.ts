@@ -16,6 +16,6 @@ test("byte counts read the way a person would say them", () => {
 test("the file size limit and its label agree", () => {
   // The label goes on the picker and into the rejection message; the constant
   // is what actually rejects. They are one number in two places.
-  assert.equal(MAX_FILE_LABEL, "64 MB");
-  assert.equal(formatBytes(MAX_FILE_BYTES), "64.0 MB");
+  assert.equal(MAX_FILE_LABEL, "128 MB");
+  assert.equal(formatBytes(MAX_FILE_BYTES), "128.0 MB");
 });

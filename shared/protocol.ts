@@ -15,7 +15,7 @@
 export const FRAME_AUTH_TAG_LEN = 8;
 export const FRAME_AUTH_SALT_LEN = 16;
 export const HEADER_LEN = 20 + FRAME_AUTH_TAG_LEN + FRAME_AUTH_SALT_LEN;
-export const MAX_FILE_BYTES = 64 * 1024 * 1024;
+export const MAX_FILE_BYTES = 128 * 1024 * 1024;
 /**
  * One place for the number, so the picker label, the rejection message and
  * packFile()'s own error can't drift apart. The HTML pulls it in as the

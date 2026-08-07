@@ -2,7 +2,7 @@
 
 Open `/send/`. Two modes, switched at the top: **File** and **Text snippet**.
 
-- **File** — tap **Select File** (any file up to 64 MB). Streaming starts immediately; the button becomes **Stop transfer**. Files are gzip-compressed only when that actually shrinks the optical payload.
+- **File** — tap **Select File** (any file up to 128 MB). Streaming starts immediately; the button becomes **Stop transfer**. Files are gzip-compressed only when that actually shrinks the optical payload.
 - **Text snippet** — paste or type (up to 16 KB), tap **Start text stream**.
 
 While streaming, the status line shows *Streaming ⟨name⟩ — Share receiver link*; the link opens a dialog with a QR of the receiver page, the copyable URL, and the OS share sheet.

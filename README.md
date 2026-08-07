@@ -1,4 +1,4 @@
-# Decimen Optical Transfer: fountain-coded QR file transfer
+# securedrop: private QR file transfer
 
 Send a file between two devices using nothing but a **screen and a camera**.
 One page displays the file as an endless stream of animated QR codes; another
@@ -14,7 +14,7 @@ Open it on both devices and go — nothing to install. Works offline after the
 first visit, and installs as an app on both iOS and Android if you want it on
 a home screen.
 
-Files up to 64 MB (or a pasted text snippet), filename and media type
+Files up to 128 MB (or a pasted text snippet), filename and media type
 preserved, gzip only when it helps, SHA-256 verified before anything is
 offered — and received video plays right in the page. Extracted from a larger
 experiment that reached **128 KB/s phone-to-phone**.

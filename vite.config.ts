@@ -124,10 +124,10 @@ export default defineConfig(({ mode }) => {
         // We inject our own registration — see rootPwaHead().
         injectRegister: false,
         manifest: {
-          name: "Decimen Optical Transfer",
-          short_name: "Decimen",
+          name: "securedrop",
+          short_name: "securedrop",
           description:
-            "Send a file or text between two devices with a screen and a camera. No network.",
+            "Private encrypted transfer between two devices using a screen and a camera.",
           theme_color: "#070a11",
           background_color: "#070a11",
           display: "standalone",

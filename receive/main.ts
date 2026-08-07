@@ -67,6 +67,49 @@ const securityPassword = document.getElementById("security-password") as HTMLInp
 const securityTotpSecret = document.getElementById("security-totp-secret") as HTMLInputElement;
 const securityTotpCode = document.getElementById("security-totp-code") as HTMLInputElement;
 const metric = (id: string) => document.getElementById(id)!;
+const RECEIVER_CREDENTIALS_KEY = "securedrop.receiver-credentials.v1";
+
+document.querySelector(".brand")?.replaceChildren("securedrop");
+
+/** iOS can discard a backgrounded browser page while the user opens Google
+ * Authenticator. Retain the two setup values for this tab only, then erase
+ * them as soon as capture begins. The changing OTP is never stored. */
+function restoreReceiverCredentials(): void {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(RECEIVER_CREDENTIALS_KEY) ?? "null") as {
+      passphrase?: unknown;
+      seed?: unknown;
+    } | null;
+    if (!saved) return;
+    if (typeof saved.passphrase === "string") securityPassword.value = saved.passphrase;
+    if (typeof saved.seed === "string") securityTotpSecret.value = saved.seed;
+  } catch {
+    // A malformed or unavailable session store is not a transfer error.
+  }
+}
+
+function saveReceiverCredentials(): void {
+  try {
+    sessionStorage.setItem(
+      RECEIVER_CREDENTIALS_KEY,
+      JSON.stringify({ passphrase: securityPassword.value, seed: securityTotpSecret.value }),
+    );
+  } catch {
+    // The page remains usable if private browsing disables session storage.
+  }
+}
+
+function clearReceiverCredentials(): void {
+  try {
+    sessionStorage.removeItem(RECEIVER_CREDENTIALS_KEY);
+  } catch {
+    // Nothing to clear when storage is unavailable.
+  }
+}
+
+restoreReceiverCredentials();
+securityPassword.addEventListener("input", saveReceiverCredentials);
+securityTotpSecret.addEventListener("input", saveReceiverCredentials);
 
 // Nothing has decoded in this long → the sender is almost certainly too dense
 // for this camera. The first nudge comes quickly (a dead link is dead within
@@ -164,8 +207,12 @@ async function start() {
   // This is deliberately local: it validates an RFC 6238 code against the
   // enrolled secret in memory and makes no request to Google or any server.
   try {
+    if (!/^\d{6}$/.test(securityTotpCode.value.replace(/\s/g, ""))) {
+      showError("Open Google Authenticator and enter the current 6-digit code for securedrop.");
+      return;
+    }
     if (!(await verifyTotp(securityTotpSecret.value, securityTotpCode.value))) {
-      showError("The authenticator code is invalid or has expired.");
+      showError("That 6-digit authenticator code is invalid or has expired. Wait for a new code, then try again.");
       return;
     }
     if (securityPassword.value.length < 12) {
@@ -221,6 +268,7 @@ async function start() {
 
   startBtn.style.display = "none";
   for (const field of [securityPassword, securityTotpSecret, securityTotpCode]) field.disabled = true;
+  clearReceiverCredentials();
   // "": back to the stylesheet's flex — the zone centers the camera box.
   preview.style.display = "";
   metricsEl.style.display = "grid";

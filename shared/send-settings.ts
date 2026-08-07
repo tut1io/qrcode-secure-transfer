@@ -8,8 +8,11 @@
 export const NO_SIGNAL_HINT_FRAME_BYTES = 1465;
 export const NO_SIGNAL_HINT_TX_FPS = 24;
 
-export const DEFAULT_TX_FPS = 60;
-export const DEFAULT_FRAME_BYTES = 2953;
+// Phone cameras are the common receiver. Start with a QR version and cadence
+// they can lock onto from a laptop screen; advanced users can still select the
+// denser/faster options once the first frame has decoded.
+export const DEFAULT_TX_FPS = NO_SIGNAL_HINT_TX_FPS;
+export const DEFAULT_FRAME_BYTES = NO_SIGNAL_HINT_FRAME_BYTES;
 
 // The hint values appear in these lists by construction, not by coincidence.
 export const TX_FPS_OPTIONS: readonly number[] = [10, 15, 20, NO_SIGNAL_HINT_TX_FPS, 30, DEFAULT_TX_FPS];
