@@ -112,6 +112,7 @@ test("the protected frame header is byte-for-byte what the wire expects", () => 
     authSalt: new Uint8Array(16).fill(0xaa),
   });
   assert.deepEqual(parsed.block, new Uint8Array([1, 2, 3, 4, 5, 6]));
+  assert.deepEqual(parsed.authTag, new Uint8Array(8).fill(0xbb));
 });
 
 test("gzip is skipped for formats it cannot help", () => {

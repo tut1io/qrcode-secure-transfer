@@ -306,7 +306,7 @@ export function packFrame(h: FrameHeader, block: Uint8Array, authTag?: Uint8Arra
 
 export function parseFrame(
   bytes: Uint8Array,
-): { header: FrameHeader; block: Uint8Array } | null {
+): { header: FrameHeader; authTag: Uint8Array; block: Uint8Array } | null {
   if (bytes.length <= HEADER_LEN) return null;
   if (bytes[0] !== MAGIC0 || bytes[1] !== MAGIC1) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -321,7 +321,11 @@ export function parseFrame(
   };
   if (header.k === 0 || header.blockLen === 0 || header.totalLen === 0) return null;
   if (bytes.length !== HEADER_LEN + header.blockLen) return null;
-  return { header, block: bytes.subarray(HEADER_LEN) };
+  return {
+    header,
+    authTag: bytes.slice(20, 20 + FRAME_AUTH_TAG_LEN),
+    block: bytes.subarray(HEADER_LEN),
+  };
 }
 
 /**

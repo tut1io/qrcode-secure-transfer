@@ -388,13 +388,13 @@ async function onDecoded(bytes: Uint8Array) {
   decodeTimes.push(performance.now());
   const parsed = parseFrame(bytes);
   if (!parsed || done) return;
-  const { header, block } = parsed;
+  const { header, authTag, block } = parsed;
   const saltKey = [...(header.authSalt ?? [])].join(",");
   if (!frameAuthenticator || frameAuthenticatorSalt !== saltKey) {
     frameAuthenticator = await createFrameAuthenticator(transferPassphrase, header.authSalt!);
     frameAuthenticatorSalt = saltKey;
   }
-  if (!(await frameAuthenticator.verify(frameAuthInput(header, block), bytes.subarray(20, 28)))) return;
+  if (!(await frameAuthenticator.verify(frameAuthInput(header, block), authTag))) return;
   if (noSignal.frameDecoded()) {
     noSignalToast.hidden = true;
     // The dialog's premise ("nothing decoded") just became false mid-read.
